@@ -28,6 +28,32 @@ Each candidate gets a score from 1 to 5 on five criteria: how many other words i
 | G. Core schema | one prototype image for a polysemous word (yield, deliver, address) |
 | H. Collision resolution | discriminators for confusable words (complement / compliment) |
 | I. Compound assembly | German compounds and separable prefixes (Hand + Schuh = Handschuh) |
+| J. Phonics & spelling pronunciation | skip what you can hear; read silent letters aloud (Wed-nes-day) |
+| K. Known-chunk segmentation | split into familiar words (enter + prise); flag swapped look-alikes (entre ≠ enter) |
+
+## Segmentation algorithm (`scripts/wordseg.py`)
+
+When intuition is not enough, the segmentation is computed instead of guessed:
+
+1. **Grapheme–phoneme alignment (DP)** against CMUdict marks every letter group as regular, variant, silent or irregular, and flags schwa positions.
+2. **Aho–Corasick automaton** over ~30k frequent words plus a morpheme table finds every familiar chunk inside the word in one pass.
+3. **k-best segmentation DP** (shortest path over positions 0…n) picks the cheapest chunkings: frequent words are cheap (cheaper still when their pronunciation matches that part of the target), morphemes carry meaning, pronounceable syllable chunks come next, and single letters are expensive. Greedy longest-match is printed only as a baseline.
+4. **Collision detection** reports frequent words one edit away (`scarce ↔ scare`), chunks with swapped letters (`entre ↔ enter`) and look-alike chunks (`prise ↔ price`).
+
+```
+pip install wordfreq cmudict
+python3 scripts/wordseg.py entrepreneur wednesday --k 3
+```
+
+```
+■ entrepreneur  /ɑntrəprəˈnɝ/
+  1. entre | pren | eur   (entre=prefix·between; pren=root·take; eur=suffix·agent)
+  碰撞：片段 entre ↔ 熟词 enter（相邻互换，别拼反）
+■ wednesday  /ˈwɛnzdeɪ/
+  1. wed | nes | day      (nes = syllable chunk with silent letters, read as spelled)
+```
+
+English only for now. The algorithm covers spelling and sound; the skill decides which candidate links best to meaning.
 
 ## Modes
 
