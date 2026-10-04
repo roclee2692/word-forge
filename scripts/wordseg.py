@@ -113,7 +113,12 @@ def load():
             z = wordfreq.zipf_frequency(w, 'en')
             if z >= ZIPF_MIN and (len(w) > 2 or w in TWO_OK):
                 words[w] = z
-    return words, cmudict.dict()
+    foreign = {}   # 德语/法语高频词：用户在学这两门语言，它们也算“熟块”（und = and）
+    for lang, name in (('de', '德语'), ('fr', '法语')):
+        for w in wordfreq.top_n_list(lang, 3000):
+            if w.isalpha() and w.isascii() and len(w) >= 2 and w not in foreign:
+                foreign[w] = (name, wordfreq.zipf_frequency(w, lang))
+    return words, cmudict.dict(), foreign
 
 # ---------- AC 自动机：一次扫描找出所有熟块 ----------
 class AC:
@@ -204,7 +209,16 @@ def ph_dist(a, b):        # 音素序列编辑距离（忽略重音）
     return d[len(b)]
 
 # ---------- 2+3. 建切分图并做 k-best DP ----------
-def analyze(word, words, cmu, ac, k=3):
+def senses(p, words, foreign):   # 一个块的全部身份：英语词 / 德法词 / 词根词缀，交给调用者挑最好编故事的
+    out = []
+    if p in words: out.append(f'英语词 zipf {words[p]:.1f}')
+    if p in foreign and len(p) >= 3: out.append(f'{foreign[p][0]}词')
+    KIND = {'p': '前缀', 'r': '词根', 's': '后缀'}
+    out += [KIND[k] + '·' + m for k, m in MORPH.get(p, [])]
+    return out
+
+def analyze(word, words, cmu, ac, k=3, foreign=None):
+    foreign = foreign or {}
     w = word.lower(); n = len(w)
     prons = cmu.get(w)
     if prons:   # 多个读音时，选拼写最“规则”的那个来对齐
@@ -233,6 +247,8 @@ def analyze(word, words, cmu, ac, k=3):
                 dd = min(ph_dist(span_ph[(i, j)], pr) for pr in cmu[p])
                 c -= SOUND_BONUS[0] if dd == 0 else SOUND_BONUS[1] if dd == 1 else 0
             add(i, j, c, 'word', f'zipf {words[p]:.1f}')
+        elif p in foreign and len(p) >= 3:
+            add(i, j, word_cost(foreign[p][1]) + 0.3, 'word', f'{foreign[p][0]}词')
         for kind, mean in MORPH.get(p, []):
             c = MORPH_COST
             if kind == 'p' and i > 0: c += 0.3
@@ -270,7 +286,12 @@ def analyze(word, words, cmu, ac, k=3):
         j, kind = max(((e[0], e[2]) for e in edges[i] if e[2] not in ('字母', '拼读块')), default=(None, None))
         if j is None: s = next(s for s in segs if s['start'] == i); j, kind = s['end'], '字母'
         greedy.append(w[i:j]); i = j
-    return {'word': w, 'segs': segs, 'top': top, 'greedy': greedy,
+    sense = {ch: senses(ch, words, foreign) for _, path in top for _, _, ch, _, _ in path}
+    def known(ch):   # 能直接当画面用的块：英语熟词（≥3 字母或常见两字母词）或 ≥3 字母的德法高频词
+        return (ch in words and (len(ch) >= 3 or ch in TWO_OK)) or (ch in foreign and len(ch) >= 3)
+    story = [len(path) > 1 and all(known(ch) and kind == 'word' or ch in words and len(ch) >= 3
+                                   for _, _, ch, kind, _ in path) for _, path in top]
+    return {'word': w, 'segs': segs, 'top': top, 'greedy': greedy, 'senses': sense, 'story': story,
             'collide': collisions(w, words, top[0][1] if top else []), 'pron': pron}
 
 # ---------- 4. 碰撞检测 ----------
@@ -329,7 +350,10 @@ def render(r):
     for rank, (c, path) in enumerate(r['top'], 1):
         parts = [f"{ch}" for _, _, ch, _, _ in path]
         notes = [f"{ch}={kind}{('·' + info) if info else ''}" for _, _, ch, kind, info in path]
-        out.append(f"  {rank}. {' | '.join(parts)}   成本 {c:.2f}   ({'; '.join(notes)})")
+        star = '  ★全是熟词，可直接编画面' if r['story'][rank - 1] else ''
+        out.append(f"  {rank}. {' | '.join(parts)}   成本 {c:.2f}   ({'; '.join(notes)}){star}")
+    multi = [f"{ch}={' / '.join(v)}" for ch, v in r['senses'].items() if len(v) > 1]
+    if multi: out.append('  一块多义（挑最好编画面的那个）：' + '；'.join(multi))
     out.append('  贪心对照：' + ' | '.join(r['greedy']))
     if r['collide']: out.append('  碰撞：' + '；'.join(r['collide']))
     return '\n'.join(out)
@@ -338,8 +362,8 @@ if __name__ == '__main__':
     args = [a for a in sys.argv[1:] if not a.startswith('--')]
     k = int(sys.argv[sys.argv.index('--k') + 1]) if '--k' in sys.argv else 3
     if '--k' in sys.argv: args.remove(str(k))
-    words, cmu = load()
-    ac = AC(sorted(set(words) | set(MORPH)))
-    res = [analyze(a, words, cmu, ac, k) for a in args]
+    words, cmu, foreign = load()
+    ac = AC(sorted(set(words) | set(MORPH) | set(foreign)))
+    res = [analyze(a, words, cmu, ac, k, foreign) for a in args]
     if '--json' in sys.argv: print(json.dumps(res, ensure_ascii=False, indent=1, default=str))
     else: print('\n\n'.join(render(r) for r in res))
