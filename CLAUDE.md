@@ -15,7 +15,7 @@ pip install wordfreq cmudict
 python3 scripts/wordseg.py redundant strawberry --k 3   # add --json for machine output
 ```
 
-PyPI is ~17 kB/s from this machine and the wordfreq wheel is ~56 MB. Use `python3 scripts/fastpip.py wordfreq cmudict` instead (stdlib only): races PyPI against tuna/aliyun/tencent/huawei/ustc, downloads 1 MB ranges from several mirrors in parallel, resumes from `<file>.part.json`, checks sha256, then `pip install --no-index`. Measured ~380–490 KB/s vs 17 kB/s. Default Python here is 3.14 and system-managed; use a 3.13 venv.
+PyPI is ~17 kB/s from this machine and the wordfreq wheel is ~56 MB. Use `python3 scripts/fastpip.py wordfreq cmudict` instead (stdlib only). It resolves with pypi.org, because only pypi.org serves PEP 658 metadata; the mirrors make pip download whole wheels just to resolve. It then hands every file to aria2c with all six mirror URLs, checks sha256 and runs `pip install --no-index`. Without aria2c it uses its own ranged multi-mirror downloader (resumes from `<file>.part.json`). Fresh install took 82 s; pip direct would take ~1 h. A general copy lives in the `fast-download` skill (`~/.claude/skills/fast-download`), which also has a `--url` mode for arbitrary files. Default Python here is 3.14 and system-managed; use a 3.13 venv.
 
 ## How wordseg.py works
 
