@@ -15,6 +15,8 @@ pip install wordfreq cmudict
 python3 scripts/wordseg.py redundant strawberry --k 3   # add --json for machine output
 ```
 
+PyPI is ~17 kB/s from this machine and the wordfreq wheel is ~56 MB. Use `python3 scripts/fastpip.py wordfreq cmudict` instead (stdlib only): races PyPI against tuna/aliyun/tencent/huawei/ustc, downloads 1 MB ranges from several mirrors in parallel, resumes from `<file>.part.json`, checks sha256, then `pip install --no-index`. Measured ~380–490 KB/s vs 17 kB/s. Default Python here is 3.14 and system-managed; use a 3.13 venv.
+
 ## How wordseg.py works
 
 1. Grapheme–phoneme alignment DP against CMUdict: tags each letter group as regular / variant / silent / irregular and flags schwa positions.

@@ -311,6 +311,7 @@ gene · generate · hydrogen · pathogen · carcinogen
 - 首选，公开下载：`curl -O https://raw.githubusercontent.com/roclee2692/word-forge/main/scripts/wordseg.py`
 - 用户电脑已连接：`~/Projects/word-forge/scripts/wordseg.py`，读出后拷到云端工作区运行。
 - 运行：`pip install wordfreq cmudict` → `python3 wordseg.py <词…> [--k 3] [--json]`
+- pip 太慢（wordfreq 约 56 MB）：改用同目录的 `fastpip.py wordfreq cmudict`，多镜像竞速、分段下载、断点续传，只用标准库。
 - 都拿不到：按上面同样的成本规则手工推演，不要因此卡住。
 
 **怎么用结果**（选择层是最容易出错的地方，按这个顺序挑）：
