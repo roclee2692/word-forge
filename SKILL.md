@@ -307,9 +307,9 @@ gene · generate · hydrogen · pathogen · carcinogen
    - 输出总成本最低的前 k 条。贪心最长匹配只作对照，它在 tuesday 这类词上会切出 tue | s | day，不是最优。
 4. **碰撞检测**：编辑距离为 1 的高频词（scarce ↔ scare）、块内相邻字母互换后变成熟词的（entre ↔ enter）、块的形近熟词（prise ↔ price）。
 
-**获取与运行**（任选一个能拿到的）：
+**获取与运行**（按顺序，拿到一个就行）：
+- 首选，公开下载：`curl -O https://raw.githubusercontent.com/roclee2692/word-forge/main/scripts/wordseg.py`
 - 用户电脑已连接：`~/Projects/word-forge/scripts/wordseg.py`，读出后拷到云端工作区运行。
-- GitHub 仓库 `roclee2692/word-forge` 的 `scripts/wordseg.py`（推送后可用）。
 - 运行：`pip install wordfreq cmudict` → `python3 wordseg.py <词…> [--k 3] [--json]`
 - 都拿不到：按上面同样的成本规则手工推演，不要因此卡住。
 

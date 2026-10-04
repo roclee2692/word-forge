@@ -44,10 +44,7 @@ The algorithm only covers spelling and sound; choosing the main mnemonic is a se
 
 ## TODO
 
-- Push the local commits to GitHub.
-- In SKILL.md §7, make the public raw URL the first way to fetch the script:
-  `https://raw.githubusercontent.com/roclee2692/word-forge/main/scripts/wordseg.py`
-  (then update the saved skill in the Claude account too).
+- Sync the saved skill in the Claude account with SKILL.md (§7 now fetches the script from the public raw URL first).
 
 ## Git notes
 
