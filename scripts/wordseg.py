@@ -15,7 +15,7 @@
 范围：  只支持英语（读音来自 CMUdict）。语义联想由调用它的 Claude 判断，
         算法只负责拼写和读音这两条通道。
 """
-import sys, json, math
+import sys, os, json, math
 from collections import deque
 
 # ---------- 成本参数（数值越小越好记） ----------
@@ -293,7 +293,14 @@ def analyze(word, words, cmu, ac, k=3, foreign=None):
         return (ch in words and (len(ch) >= 3 or ch in TWO_OK)) or (ch in foreign and len(ch) >= 3)
     story = [len(path) > 1 and all(known(ch) and kind == 'word' or ch in words and len(ch) >= 3
                                    for _, _, ch, kind, _ in path) for _, path in top]
-    return {'word': w, 'segs': segs, 'top': top, 'greedy': greedy, 'senses': sense, 'story': story,
+    risk = []
+    for s in segs:
+        if not s['ph']: continue
+        v, alts = spell_risk(s)
+        hit = ''.join(ch for ch, x in zip(s['g'], v) if x >= RISK_T)
+        if hit and alts: risk.append({'g': s['g'], 'letters': hit, 'start': s['start'], 'alts': alts,
+                                     'sound': ''.join(ipa(p) for p in s['ph']).lstrip('ˈ')})
+    return {'word': w, 'segs': segs, 'top': top, 'risk': risk, 'greedy': greedy, 'senses': sense, 'story': story,
             'collide': collisions(w, words, top[0][1] if top else []), 'pron': pron}
 
 # ---------- 4. 碰撞检测 ----------
@@ -329,14 +336,73 @@ def collisions(w, words, best_path):
             if near: res.append((near[0][0], f'块 {chunk} 形近熟词：' + ' / '.join(c for _, c in near) + '（可类比，别写混）'))
     return [s for _, s in sorted(res, reverse=True)[:4]]
 
+# ---------- 拼写易错位 ----------
+# 同一个音的其他常见写法里，有多少概率恰好在这个字母上和它不同（竞争拼法压力）。
+# research/E0 用 FCE 学习者真实拼错的位置验证过：val 集 AUC 0.559（旧的“弱读/不规则”标记）→ 0.638；
+# 阈值 0.5 时标出约 23% 的字母，这些位置的实际错误率是平均的 1.58 倍（旧标记标 32%，1.30 倍）。
+_P2G_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'p2g.json')
+P2G = json.load(open(_P2G_PATH)) if os.path.exists(_P2G_PATH) else {}
+RISK_T = 0.5
+
+def letter_mass(word, miss):   # 把另一种写法对齐到 word 上，返回每个字母上的差异量（与 research/common.error_positions 相同）
+    n, m = len(word), len(miss)
+    d = [[0] * (m + 1) for _ in range(n + 1)]
+    for i in range(n + 1): d[i][0] = i
+    for j in range(m + 1): d[0][j] = j
+    for i in range(1, n + 1):
+        for j in range(1, m + 1):
+            d[i][j] = min(d[i-1][j] + 1, d[i][j-1] + 1, d[i-1][j-1] + (word[i-1] != miss[j-1]))
+            if i > 1 and j > 1 and word[i-1] == miss[j-2] and word[i-2] == miss[j-1]: d[i][j] = min(d[i][j], d[i-2][j-2] + 1)
+    mass, i, j = [0.0] * n, n, m
+    while i > 0 or j > 0:
+        if i > 1 and j > 1 and word[i-1] == miss[j-2] and word[i-2] == miss[j-1] and d[i][j] == d[i-2][j-2] + 1 and word[i-1] != word[i-2]:
+            mass[i-1] += 1; mass[i-2] += 1; i -= 2; j -= 2
+        elif i > 0 and j > 0 and d[i][j] == d[i-1][j-1] + (word[i-1] != miss[j-1]):
+            if word[i-1] != miss[j-1]: mass[i-1] += 1
+            i -= 1; j -= 1
+        elif i > 0 and d[i][j] == d[i-1][j] + 1:
+            mass[i-1] += 1; i -= 1
+        else:
+            if i > 0: mass[i-1] += 0.5
+            if i < n: mass[i] += 0.5
+            j -= 1
+    return mass
+
+def alt_name(g, a):   # 竞争写法的说法：双写 ↔ 单写要点明，否则“mm 也常写成 m”像废话
+    if len(g) == 2 and g[0] == g[1] and a == g[0]: return f'单写 {a}'
+    if len(a) == 2 and a[0] == a[1] and g == a[0]: return f'双写 {a}'
+    return a
+
+def spell_risk(seg):   # 返回 (每个字母的风险, [(竞争写法, 概率)…])
+    key = ' '.join(p.rstrip('012') if p.rstrip('012') not in VOWEL_PH else p for p in seg['ph'])
+    alts = P2G.get(key, {}); tot = sum(alts.values()); g = seg['g']
+    v = [0.0] * len(g)
+    if not tot: return v, []
+    for g2, c in alts.items():
+        if g2 != g:
+            for i, x in enumerate(letter_mass(g, g2)): v[i] += c / tot * min(x, 1.0)
+    comp = sorted(((c / tot, g2) for g2, c in alts.items() if g2 != g), reverse=True)
+    return v, [(g2, round(p, 2)) for p, g2 in comp if p >= 0.1][:2]
+
 # ---------- 输出 ----------
 TAG = {'regular': '', 'variant': '变体', 'silent': '不发音', 'irregular': '不规则', 'irregular-silent': '不规则静音', 'unknown': ''}
 
-def ipa_word(pron):   # 重音符号放到重读音节的起首辅音前
+def legal_ph_onset(c):   # 英语合法的音节首辅音丛（音素层面）：str、pl、kw、sp……
+    if len(c) == 1: return c[0] != 'NG'
+    if len(c) == 2:
+        a, b = c
+        return (a == 'S' and b in ('P', 'T', 'K', 'M', 'N', 'L', 'W', 'F')) or \
+               (a in ('P', 'B', 'T', 'D', 'K', 'G', 'F', 'TH', 'SH') and b in ('R', 'L', 'W', 'Y')) or \
+               (a in ('M', 'N', 'V', 'HH') and b == 'Y')
+    return len(c) == 3 and c[0] == 'S' and c[1] in ('P', 'T', 'K') and c[2] in ('R', 'L', 'W', 'Y')
+
+def ipa_word(pron):   # 重音符号放到重读音节的整个起首辅音丛前（strawberry → /ˈstrɔ…/）
     sy = [ipa(p).lstrip('ˈ') for p in pron]
+    base = [p.rstrip('012') for p in pron]
     for i, p in enumerate(pron):
         if p.endswith('1'):
-            k = i - 1 if i > 0 and pron[i - 1].rstrip('012') not in VOWEL_PH else i
+            k = i
+            while k > 0 and base[k - 1] not in VOWEL_PH and legal_ph_onset(base[k - 1:i]): k -= 1
             sy[k] = 'ˈ' + sy[k]; break
     return ''.join(sy)
 
@@ -349,6 +415,9 @@ def render(r):
         tag = '·'.join(x for x in (TAG[s['tag']], risk) if x)
         al.append(f"{s['g']}→{ph}" + (f"[{tag}]" if tag else ''))
     out.append('  对齐：' + '  '.join(al))
+    if r.get('risk'): out.append('  易错位：' + '；'.join(
+        f"{x['g']}" + (f" 的 {x['letters']}" if x['letters'] != x['g'] else '') + f"（/{x['sound']}/ 也常写成 {' / '.join(alt_name(x['g'], a) for a, _ in x['alts'])}）"
+        for x in r['risk']))
     for rank, (c, path) in enumerate(r['top'], 1):
         parts = [f"{ch}" for _, _, ch, _, _ in path]
         notes = [f"{ch}={kind}{('·' + info) if info else ''}" for _, _, ch, kind, info in path]
