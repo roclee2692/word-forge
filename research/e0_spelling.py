@@ -36,6 +36,18 @@ def p2g_table(cmu):
             cnt[(key, s['g'])] += wt; tot[key] += wt
     pickle.dump((cnt, tot), open(path, 'wb')); return cnt, tot
 
+# ---------- 竞争拼法压力：同一个音的其他写法，有多少概率恰好在这个字母上和它不同 ----------
+_COMP = {}
+def comp_vec(key, g, p2g):
+    if (key, g) in _COMP: return _COMP[(key, g)]
+    cnt, tot = p2g
+    v = [0.0] * len(g)
+    if tot[key]:
+        for (k2, g2), c in cnt.items():
+            if k2 != key or g2 == g: continue
+            for i, m in enumerate(error_positions(g, g2)): v[i] += c / tot[key] * min(m, 1.0)
+    _COMP[(key, g)] = v; return v
+
 # ---------- 每个字母的特征 ----------
 def letter_feats(w, cmu, p2g):
     cnt, tot = p2g
@@ -47,8 +59,10 @@ def letter_feats(w, cmu, p2g):
         p = (cnt[(key, s['g'])] + 0.5) / (tot[key] + 5)
         schwa = any(x in ('AH0', 'IH0', 'ER0') for x in s['ph']) and WS.is_vowel_g(s['g'])
         dbl = len(s['g']) == 2 and s['g'][0] == s['g'][1]
+        cv = comp_vec(key, s['g'], p2g)
         for k in range(s['start'], s['end']):
             rows.append({
+                'comp': cv[k - s['start']],
                 'b0': float(s['tag'] != 'regular' or schwa),
                 'vowel': float(w[k] in 'aeiouy'),
                 'p2g': -math.log(p),                       # 听到这个音、写出这个字母组合的意外程度
