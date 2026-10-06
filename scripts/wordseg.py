@@ -286,7 +286,8 @@ def analyze(word, words, cmu, ac, k=3, foreign=None):
     greedy, i = [], 0
     while i < n:
         j, kind = max(((e[0], e[2]) for e in edges[i] if e[2] not in ('字母', '拼读块')), default=(None, None))
-        if j is None: s = next(s for s in segs if s['start'] == i); j, kind = s['end'], '字母'
+        if j is None:   # 前一块停在字母组合中间时，从这里开始的组合不存在，就退一个字母
+            s = next((s for s in segs if s['start'] == i), None); j, kind = (s['end'] if s else i + 1), '字母'
         greedy.append(w[i:j]); i = j
     sense = {ch: senses(ch, words, foreign) for _, path in top for _, _, ch, _, _ in path}
     def known(ch):   # 能直接当画面用的块：英语熟词（≥3 字母或常见两字母词）或 ≥3 字母的德法高频词
@@ -301,7 +302,7 @@ def analyze(word, words, cmu, ac, k=3, foreign=None):
         if hit and alts: risk.append({'g': s['g'], 'letters': hit, 'start': s['start'], 'alts': alts,
                                      'sound': ''.join(ipa(p) for p in s['ph']).lstrip('ˈ')})
     return {'word': w, 'segs': segs, 'top': top, 'risk': risk, 'greedy': greedy, 'senses': sense, 'story': story,
-            'collide': collisions(w, words, top[0][1] if top else []), 'pron': pron}
+            'collide': collisions(w, words, top[0][1] if top else [], cmu), 'pron': pron}
 
 # ---------- 4. 碰撞检测 ----------
 def edits1(w):
@@ -315,11 +316,60 @@ def edits1(w):
             out.setdefault(a + c + b, '多一个字母')
     out.pop(w, None); return out
 
-def collisions(w, words, best_path):
+_PHIDX = None
+def phone_index(words, cmu):   # 读音（去重音）→ 熟词
+    global _PHIDX
+    if _PHIDX is None:
+        _PHIDX = {}
+        for x in words:
+            for p in cmu.get(x, []): _PHIDX.setdefault(tuple(q.rstrip('012') for q in p), set()).add(x)
+    return _PHIDX
+
+PHONES = sorted(IPA)
+def near_homophones(w, words, cmu):   # 同音词 → 0；只差一个元音的熟词 → 'v'；只差一个辅音或增删一个音素 → 1
+    idx, out = phone_index(words, cmu), {}
+    for p in cmu.get(w, []):
+        b = [q.rstrip('012') for q in p]; cands = {tuple(b): 0}
+        for i in range(len(b) + 1):
+            if i < len(b): cands.setdefault(tuple(b[:i] + b[i + 1:]), 1)
+            for ph in PHONES:
+                if i < len(b) and ph != b[i]:
+                    cands.setdefault(tuple(b[:i] + [ph] + b[i + 1:]), 'v' if ph in VOWEL_PH and b[i] in VOWEL_PH else 1)
+                cands.setdefault(tuple(b[:i] + [ph] + b[i:]), 1)
+        for c, dist in cands.items():
+            for x in idx.get(c, ()):
+                if x != w and (x not in out or out[x] != 0): out[x] = dist
+    return out
+
+def lev(a, b):
+    d = list(range(len(b) + 1))
+    for i in range(1, len(a) + 1):
+        prev, d[0] = d[0], i
+        for j in range(1, len(b) + 1):
+            cur = min(d[j] + 1, d[j - 1] + 1, prev + (a[i - 1] != b[j - 1])); prev, d[j] = d[j], cur
+    return d[len(b)]
+
+def is_infl(a, b):   # 同一个词的屈折形式（不算碰撞）
+    for x, y in ((a, b), (b, a)):
+        for suf in ('s', 'es', 'd', 'ed', 'ing', 'er', 'r', 'ly'):
+            if y == x + suf or (x.endswith('e') and y == x[:-1] + suf) or (x.endswith('y') and y == x[:-1] + 'i' + suf): return True
+    return False
+
+def collisions(w, words, best_path, cmu=None):
     res = []
     infl = {w + 's', w + 'es', w + 'd', w + 'ed', w + 'r', w[:-1]}
-    for cand, how in edits1(w).items():                 # 整词近邻（排除复数、过去式等词形变化）
-        if words.get(cand, 0) >= 3.5 and cand not in infl: res.append((words[cand], f'{w} ↔ {cand}（{how}）'))
+    e1 = edits1(w)
+    for cand, how in e1.items():                 # 整词近邻（排除复数、过去式等词形变化）
+        if words.get(cand, 0) >= 3.5 and cand not in infl:
+            res.append((words[cand] + 0.5, f'{w} ↔ {cand}（{how}）'))
+    # 同音、或只差一个元音、拼写差 ≤2 的熟词（break ↔ brake，accept ↔ except）。
+    # research/E2：对照 FCE 学习者真实混淆的词对，召回 val 0.47 → 0.58。只差一个辅音的（wait/waste）不收，收了反而更差。
+    if cmu:
+        for cand, dist in near_homophones(w, words, cmu).items():
+            if cand in e1 or words.get(cand, 0) < 3.0 or is_infl(w, cand) or lev(w, cand) > 2: continue
+            if dist == 1: continue
+            bonus = 1.5 if dist == 0 else 0.8
+            res.append((words[cand] + bonus, f'{w} ↔ {cand}（{"同音" if dist == 0 else "只差一个元音" if dist == "v" else "读音几乎相同"}）'))
     seen = set()
     spans = {(i, j) for i, j, *_ in best_path} | {(0, L) for L in range(4, 8)}
     for i, j in sorted(spans):                          # 词首或最优切分的块被拼反
