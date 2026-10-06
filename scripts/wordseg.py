@@ -173,7 +173,9 @@ def align(word, phones):
                         c, tag = (0.0, 'regular') if k == 0 else (0.3, 'variant')
                     upd(i + L, j + len(opt), c0 + c, (i, j, g, tag))
             if j < m: upd(i + 1, j + 1, c0 + 2.0, (i, j, word[i], 'irregular'))   # 不规则读法
+            if j + 1 < m: upd(i + 1, j + 2, c0 + 2.5, (i, j, word[i], 'irregular'))   # 一个字母读两个音（security 的 u→/jʊ/、缩写词）
             upd(i + 1, j, c0 + 1.5, (i, j, word[i], 'irregular-silent'))           # 不规则静音
+    if dp[n][m] == INF: return None    # 音素比字母还多、对不齐（如 w 读 /ˈdʌbəlju/）
     segs, i, j = [], n, m
     while i > 0:
         pi, pj, g, tag = bt[i][j]
@@ -220,10 +222,10 @@ def senses(p, words, foreign):   # 一个块的全部身份：英语词 / 德法
 def analyze(word, words, cmu, ac, k=3, foreign=None):
     foreign = foreign or {}
     w = word.lower(); n = len(w)
-    prons = cmu.get(w)
-    if prons:   # 多个读音时，选拼写最“规则”的那个来对齐
-        cands = [(sum({'regular': 0, 'variant': .3, 'silent': .5}.get(x['tag'], 2) for x in align(w, p)), i) for i, p in enumerate(prons)]
-        pron = prons[min(cands)[1]]; segs = align(w, pron)
+    al = [(p, align(w, p)) for p in cmu.get(w, [])]
+    al = [(p, s) for p, s in al if s]            # 对不齐的读音丢掉
+    if al:      # 多个读音时，选拼写最“规则”的那个来对齐
+        pron, segs = min(al, key=lambda x: sum({'regular': 0, 'variant': .3, 'silent': .5}.get(s['tag'], 2) for s in x[1]))
     else:
         pron = None; segs = pseudo_align(w)
     bounds = {s['start'] for s in segs} | {n}
