@@ -308,7 +308,8 @@ gene · generate · hydrogen · pathogen · carcinogen
 4. **碰撞检测**：编辑距离为 1 的高频词（scarce ↔ scare）、块内相邻字母互换后变成熟词的（entre ↔ enter）、块的形近熟词（prise ↔ price）。
 
 **获取与运行**（按顺序，拿到一个就行）：
-- 首选，公开下载：`curl -O https://raw.githubusercontent.com/roclee2692/word-forge/main/scripts/wordseg.py`
+- 首选，公开下载（4 个文件放同一目录；缺了 json，易错位、词缀可信度、★ 画像会悄悄退回旧逻辑）：
+  `for f in wordseg.py p2g.json affix_rel.json known_en.json; do curl -sO https://raw.githubusercontent.com/roclee2692/word-forge/main/scripts/$f; done`
 - 用户电脑已连接：`~/Projects/word-forge/scripts/wordseg.py`，读出后拷到云端工作区运行。
 - 运行：`pip install wordfreq cmudict` → `python3 wordseg.py <词…> [--k 3] [--json]`
 - pip 太慢（wordfreq 约 56 MB）：改用同目录的 `fastpip.py wordfreq cmudict`，多镜像竞速、分段下载、断点续传，只用标准库。
