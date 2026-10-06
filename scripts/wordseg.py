@@ -65,6 +65,14 @@ ive s …的|ative s …的|less s 无|ly s 地|ment s 名词|ness s 名词|ous 
 ship s 身份|ure s 名词|ward s 向|atile s 易…的|ile s 能…的|ar s …的|ette s 小|esque s 风格|ology s 学科
 logy s 学科|ian s 人|ine s …的|oid s 像|osis s 病/过程|urnal s …的|imen s 名词|ber s 月份词尾|uary s 月份词尾
 """
+_REL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'affix_rel.json')
+AFFIX_REL = json.load(open(_REL_PATH)) if os.path.exists(_REL_PATH) else {}
+def morph_rel(kind, p, i, j, n):   # 这个串在这个位置真是语素的比例（来自 MorphoLex 统计；前缀不在词首、后缀不在词尾时打五折）
+    r = AFFIX_REL.get(f'{kind}:{p}', [0.5])[0]
+    if (kind == 'p' and i > 0) or (kind == 's' and j < n): r *= 0.5
+    return r
+# 低于这个可信度的词根词缀说法不标（research/E3a：对照 MorphoLex 人工切分，val 上错误说法 25 → 5，正确说法 97 → 87）
+REL_T = 0.4
 MORPH = {}
 for item in MORPHS.replace("\n", "|").split("|"):
     item = item.strip()
@@ -241,7 +249,9 @@ def analyze(word, words, cmu, ac, k=3, foreign=None):
         for x in (i, j):
             if x not in bounds: cost += 0.1 if x in soft else SPLIT_PEN / 2
         edges[i].append((j, cost, kind, info))
-    for i, j, p in ac.find(w):                 # 熟词和词根词缀
+    found = ac.find(w)
+    ok_claim = {(i, j, kd) for i, j, p in found if p != w for kd, _ in MORPH.get(p, []) if morph_rel(kd, p, i, j, n) >= REL_T}
+    for i, j, p in found:                      # 熟词和词根词缀
         if p == w: continue
         if p in words:
             c = word_cost(words[p])
@@ -252,6 +262,7 @@ def analyze(word, words, cmu, ac, k=3, foreign=None):
         elif p in foreign and len(p) >= 3:
             add(i, j, word_cost(foreign[p][1]) + 0.3, 'word', f'{foreign[p][0]}词')
         for kind, mean in MORPH.get(p, []):
+            if (i, j, kind) not in ok_claim: continue      # 不可信的词缀说法会误导（ancestor 的 ance、acrobat 的 ac）
             c = MORPH_COST
             if kind == 'p' and i > 0: c += 0.3
             if kind == 's' and j < n: c += 0.5
