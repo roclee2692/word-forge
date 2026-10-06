@@ -111,6 +111,16 @@ def ipa(ph):  # ph 是带重音数字的 ARPAbet
     if b == 'ER' and s == '0': return 'ɚ'
     return ('ˈ' if s == '1' else '') + IPA.get(b, b.lower())
 
+# ---------- 学习者画像：哪些词算“熟块”（决定 ★） ----------
+# general：初中 + 高中词汇（大部分中国学习者）；raelon：再加四级词汇和德语、法语高频词（用户在学德法语）。
+# research/E3b：旧判定只看 wordfreq 词频，dev 上 81% 的 ★ 路径含通用学习者不认识的块（ive、ent、comm、nes、fri）。
+_KNOWN_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'known_en.json')
+_KNOWN = json.load(open(_KNOWN_PATH)) if os.path.exists(_KNOWN_PATH) else None
+PROFILE = 'raelon'
+def known_en():
+    if not _KNOWN: return None
+    return set(_KNOWN['general']) | (set(_KNOWN['cet4']) if PROFILE == 'raelon' else set())
+
 # ---------- 词典加载 ----------
 TWO_OK = {'an','at','in','on','to','up','us','we','me','he','it','is','of','or','by','so','no','go','do','be','my','as','if','am','ox','hi','oh'}
 def load():
@@ -301,10 +311,11 @@ def analyze(word, words, cmu, ac, k=3, foreign=None):
             s = next((s for s in segs if s['start'] == i), None); j, kind = (s['end'] if s else i + 1), '字母'
         greedy.append(w[i:j]); i = j
     sense = {ch: senses(ch, words, foreign) for _, path in top for _, _, ch, _, _ in path}
-    def known(ch):   # 能直接当画面用的块：英语熟词（≥3 字母或常见两字母词）或 ≥3 字母的德法高频词
-        return (ch in words and (len(ch) >= 3 or ch in TWO_OK)) or (ch in foreign and len(ch) >= 3)
-    story = [len(path) > 1 and all(known(ch) and kind == 'word' or ch in words and len(ch) >= 3
-                                   for _, _, ch, kind, _ in path) for _, path in top]
+    kn = known_en()
+    def known(ch):   # 能直接当画面用的块：学习者认识的英语词（≥3 字母或常见两字母词）；raelon 画像另加 ≥3 字母的德法高频词
+        en = (ch in kn) if kn is not None else (ch in words)
+        return (en and (len(ch) >= 3 or ch in TWO_OK)) or (PROFILE == 'raelon' and ch in foreign and len(ch) >= 3)
+    story = [len(path) > 1 and all(known(ch) for _, _, ch, _, _ in path) for _, path in top]   # 看块的全部身份：ant 标成后缀也算熟词
     risk = []
     for s in segs:
         if not s['ph']: continue
@@ -494,6 +505,8 @@ if __name__ == '__main__':
     args = [a for a in sys.argv[1:] if not a.startswith('--')]
     k = int(sys.argv[sys.argv.index('--k') + 1]) if '--k' in sys.argv else 3
     if '--k' in sys.argv: args.remove(str(k))
+    if '--profile' in sys.argv:   # general：大部分中国学习者；raelon（默认）：加四级和德法语
+        PROFILE = sys.argv[sys.argv.index('--profile') + 1]; args.remove(PROFILE)
     words, cmu, foreign = load()
     ac = AC(sorted(set(words) | set(MORPH) | set(foreign)))
     res = [analyze(a, words, cmu, ac, k, foreign) for a in args]

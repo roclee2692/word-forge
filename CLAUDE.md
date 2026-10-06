@@ -39,8 +39,10 @@ The algorithm only covers spelling and sound; choosing the main mnemonic is a se
 
 ## Known issues / ideas
 
-- No concreteness or imageability data yet: ★ marks "all known words", not "easy to picture". A concreteness lexicon (e.g. Brysbaert ratings) would let the cost function prefer nouns you can see.
-- Foreign-word list adds some noise for short chunks (re, en); chunks under 3 letters are excluded from ★.
+- See `research/RESEARCH_LOG.md` for the measured changes (spelling-risk line, collisions, affix reliability, learner-profile ★) and what was tried and rejected.
+- No concreteness or imageability data yet: ★ marks "all chunks known to the learner profile", not "easy to picture". Brysbaert ratings are in `research/data` but not wired in, because without human recall data nothing can show they help.
+- ★ lexicons come from curriculum lists (初中/高中/四级). They are conservative: berry is not in the general list, so strawberry gets no ★ for `--profile general`.
+- Affix reliability uses MorphoLex (present-day morphology). Etymological splits it doesn't segment (ac|com|mod|ate, ob|nox|ious) can get dropped; an etymology-level ground truth (e.g. Wiktionary) is the missing piece.
 - Morpheme table is hand-written and small; month-suffix entries (`ber`, `uary`) are ad hoc.
 - English only; German/French cards still rely on the rules in SKILL.md.
 

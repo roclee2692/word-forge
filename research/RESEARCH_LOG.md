@@ -141,3 +141,24 @@
 - **H-M2 的代价**：obnoxious（ob|nox|ious）、accommodate（ac|com|mod|ate）这类真词源被拆散；entrepreneur 丢了 pren（拿）。
 - **H-M3 的教训**：它是为了救回上面这几个词想出来的，在这几个例子上有效，在 dev 整体上却让错误翻倍。**凭几个回归词的直觉改代码，整体是负收益。**
 - **口径局限**：MorphoLex 标的是现代英语构词（secure+ity），word-forge 看重历史词源（ad+com+mod）。accommodate 这类词在 MorphoLex 里是单语素，所以它们的词源切分对不对，这个指标判断不了。要解决需要词源级真值（比如 Wiktionary 的词源切分），列为后续工作。
+
+---
+
+## E3b：★ 的定义（K，熟块覆盖）——定义修正，不是可度量的改进
+
+**问题**：旧 ★ 的条件是“每块都在 wordfreq 高频词里”。
+- dev 的 271 条 ★ 路径（前 3 名）里，**81%** 含有通用学习者不认识的块，按 raelon 画像算也有 65%。
+- 典型假熟块：ive、ent、tic、comm、cont、rep、nes、fri。它们只是缩写或词缀碎片，wordfreq 收录它们是因为出现频率高。
+- 后果：SKILL.md 里排第一的选择规则“★ 默认当主记法”，大部分 ★ 是假的。
+
+**修正**：★ 要求每一块都在学习者画像的词表里，看块的全部身份（ant 被标成后缀，也照样算熟词）。
+- `general`：初中 + 高中词汇（3,901 词）。
+- `raelon`（默认）：在 general 基础上加四级词汇（+1,750），再加德语、法语高频词。
+- 词表来自 KyleBing/english-vocabulary（BSD-3），导出为 `scripts/known_en.json`。
+
+**结果**（dev，第 1 名带 ★）：raelon 14%，general 8%。
+- 例：blueprint = blue|print，campfire = camp|fire，counterpart = counter|part，ascertain = as|certain。
+- redundant 在 raelon 画像下仍是 ★；在 general 画像下不是，因为 und 只对学德语的人算熟块。wednesday、friend 不再带 ★。
+
+**为什么不算“改进”**：真值本身就是这份词表，拿它来评自己是循环论证。这一步修的是定义，不是用数据证明“更好记”。
+**已知偏差**：课程词表偏保守，比如 berry 不在 general 里，所以 strawberry 在 general 画像下没有 ★。
